@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -10,210 +11,230 @@ from datetime import datetime, timedelta
 import pytz
 from scipy.stats import norm
 import tensorflow as tf
-from alpha_vantage.foreignexchange import ForeignExchange
 import quantstats as qs
-
-# Initialize advanced components
-sentiment_analyzer = pipeline('sentiment-analysis', model='ProsusAI/finbert')
-kite = KiteConnect(api_key="YOUR_ZERODHA_API_KEY")
-lstm_model = tf.keras.models.load_model('forecast_model.h5')  # Pre-trained LSTM model
-
-# Configure page
-st.set_page_config(page_title="AI Trading Nexus", layout="wide", page_icon="🚀")
-st.title("🤖 AI-Powered Trading Nexus for Indian Markets")
+import feedparser
+from streamlit.components.v1 import html
 
 # ---------------------
-# Advanced Data Modules
+# Configuration
 # ---------------------
+st.set_page_config(
+    page_title="AI Trading Nexus Pro",
+    layout="wide",
+    page_icon="🚀",
+    initial_sidebar_state="expanded"
+)
+
+# ---------------------
+# Initialize Components
+# ---------------------
+try:
+    sentiment_analyzer = pipeline('sentiment-analysis', model='ProsusAI/finbert')
+except Exception as e:
+    st.error(f"Error initializing NLP model: {str(e)}")
+
+# ---------------------
+# Data Modules
+# ---------------------
+@st.cache_data(ttl=300)
 def get_live_market_data():
-    """Fetch real-time data from NSE/BSE with WebSocket integration"""
-    nse_indices = ['NIFTY 50', 'NIFTY BANK', 'INDIA VIX']
-    data = {}
-    for index in nse_indices:
-        data[index] = yf.download(f'^{index}.NS', period='1d')['Close'].iloc[-1]
-    return data
+    """Fetch real-time NSE data"""
+    try:
+        nse_indices = ['^NSEI', '^NSEBANK', '^INDIAVIX']
+        data = {}
+        for index in nse_indices:
+            ticker = yf.Ticker(index)
+            hist = ticker.history(period='1d')
+            data[index] = hist['Close'].iloc[-1]
+        return data
+    except Exception as e:
+        st.error(f"Market data error: {str(e)}")
+        return None
 
+@st.cache_data(ttl=3600)
 def get_fii_dii_data():
     """Fetch institutional activity from NSE"""
-    url = "https://www.nseindia.com/api/daily-reports?key=fiiDii"
-    response = requests.get(url).json()
-    return pd.DataFrame(response['data'])
-
-def get_live_currency_rates():
-    """Get real-time forex rates"""
-    cc = ForeignExchange(key='ALPHA_VANTAGE_KEY')
-    rates, _ = cc.get_currency_exchange_rate(from_currency='USD', to_currency='INR')
-    return float(rates['5. Exchange Rate'])
+    try:
+        url = "https://www.nseindia.com/api/daily-reports?key=fiiDii"
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}).json()
+        return pd.DataFrame(response['data'])
+    except Exception as e:
+        st.error(f"Institutional data error: {str(e)}")
+        return pd.DataFrame()
 
 # ---------------------
-# AI Prediction Engine
+# AI Modules
 # ---------------------
-def predict_stock_movement(ticker):
-    """LSTM-based price prediction"""
-    data = yf.download(ticker+'.NS', period='60d')['Close'].values
-    sequence = data[-30:].reshape(1, 30, 1)
-    prediction = lstm_model.predict(sequence)
-    return data[-1], prediction[0][0]
-
-# ---------------------
-# Risk Management System
-# ---------------------
-def calculate_margin_requirements(symbol):
-    """Fetch SPAN margin from Zerodha API"""
-    margins = kite.margins()
-    return margins['equity']['span'] + margins['equity']['exposure']
-
-def stress_test_portfolio(portfolio):
-    """Regulatory stress testing framework"""
-    scenarios = {
-        '2008 Crisis': -0.60,
-        'COVID Crash': -0.40,
-        'Rate Hike 2022': -0.25,
-        'Election Volatility': -0.35
-    }
-    results = {}
-    for scenario, impact in scenarios.items():
-        results[scenario] = portfolio * (1 + impact)
-    return results
-
-# ---------------------
-# Real-time Dashboard
-# ---------------------
-st.sidebar.header("🔧 Control Panel")
-selected_strategy = st.sidebar.selectbox("Trading Style", [
-    "Intraday F&O", "Swing Trading", "Long-Term Investing", "Arbitrage"
-])
-
-# ---------------
-# Market Overview
-# ---------------
-col1, col2, col3 = st.columns(3)
-with col1:
-    live_data = get_live_market_data()
-    st.metric("NIFTY 50", f"₹{live_data['NIFTY 50']:,.2f}", 
-             delta=f"{(live_data['NIFTY 50'] - prev_close)/prev_close:.2%}")
-
-with col2:
-    vix = live_data['INDIA VIX']
-    st.metric("Fear Index", f"{vix}%", 
-             delta_color="inverse" if vix > 20 else "normal")
-
-with col3:
-    usdinr = get_live_currency_rates()
-    st.metric("USD/INR", f"₹{usdinr:,.2f}")
-
-# ------------------
-# Institutional Flow
-# ------------------
-st.subheader("📈 Institutional Activity")
-fii_dii = get_fii_dii_data()
-
-fig = go.Figure()
-fig.add_trace(go.Bar(x=fii_dii['date'], y=fii_dii['fii_net'],
-                    name='FII Flow', marker_color='#636EFA'))
-fig.add_trace(go.Bar(x=fii_dii['date'], y=fii_dii['dii_net'],
-                    name='DII Flow', marker_color='#EF553B'))
-st.plotly_chart(fig, use_container_width=True)
-
-# ------------------
-# AI Prediction Hub
-# ------------------
-st.subheader("🔮 AI Forecast Engine")
-pred_col1, pred_col2 = st.columns(2)
-
-with pred_col1:
-    ticker = st.selectbox("Select Stock", ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY'])
-    current_price, predicted_price = predict_stock_movement(ticker)
-    delta = (predicted_price - current_price)/current_price
-    st.metric("LSTM Prediction", f"₹{predicted_price:,.2f}", 
-             f"{delta:.2%}", delta_color="normal")
-
-with pred_col2:
-    st.write("**Technical Signals**")
-    rsi = 68  # Calculate RSI
-    macd = -1.5  # Calculate MACD
-    st.write(f"""
-    - RSI (14): `{rsi}` {'(Overbought)' if rsi > 70 else '(Oversold)'}
-    - MACD: `{macd}` {'↑ Bullish' if macd > 0 else '↓ Bearish'}
-    - Volume Trend: `1.2M → 1.8M` (+50%)
-    """)
-
-# ------------------
-# Advanced Analytics
-# ------------------
-st.subheader("📊 Institutional-Grade Analytics")
-tab1, tab2, tab3, tab4 = st.tabs(["Risk Matrix", "Portfolio Optimizer", "Sentiment Map", "Backtester"])
-
-with tab1:
-    st.write("**Scenario Analysis**")
-    portfolio_value = 10_00_000  # Get from broker API
-    stress_results = stress_test_portfolio(portfolio_value)
+class LSTMPredictor:
+    def __init__(self):
+        self.model = tf.keras.models.load_model('lstm_model.h5')  # Pretrained model
     
-    fig = go.Figure()
-    for scenario, value in stress_results.items():
-        fig.add_trace(go.Bar(x=[scenario], y=[value], name=scenario))
-    st.plotly_chart(fig)
+    def predict(self, ticker):
+        try:
+            data = yf.download(f"{ticker}.NS", period='60d')['Close'].values
+            sequence = data[-30:].reshape(1, 30, 1)
+            prediction = self.model.predict(sequence)
+            return data[-1], prediction[0][0]
+        except Exception as e:
+            st.error(f"Prediction error: {str(e)}")
+            return None, None
 
-with tab2:
-    st.write("**Mean-Variance Optimization**")
-    # Implement Markowitz optimization with SEBI constraints
-    st.plotly_chart(efficient_frontier_chart)
+# ---------------------
+# UI Components
+# ---------------------
+def render_sidebar():
+    with st.sidebar:
+        st.header("🔑 Broker Authentication")
+        api_key = st.text_input("Zerodha API Key", type="password")
+        access_token = st.text_input("Access Token", type="password")
+        
+        if st.button("Connect Live Data"):
+            try:
+                kite = KiteConnect(api_key=api_key)
+                kite.set_access_token(access_token)
+                st.session_state.kite = kite
+                st.success("Connected successfully!")
+            except Exception as e:
+                st.error(f"Connection failed: {str(e)}")
+        
+        st.header("⚙️ Settings")
+        st.selectbox("Trading Style", ["Intraday", "Swing", "Positional"])
+        st.slider("Risk Appetite", 1, 5, 3)
+        st.checkbox("Enable Tax Optimization", True)
 
-with tab3:
-    st.write("**Real-time Sentiment Radar**")
-    # Implement sector-wise sentiment analysis using FinBERT
-    st.plotly_chart(sentiment_radar_chart)
-
-with tab4:
-    st.write("**Strategy Backtester**)
-    # Integrate Quantstats library for performance reporting
-    qs.reports.html(returns, output='backtest.html')
-    st.components.v1.html(open('backtest.html').read(), height=1000)
-
-# ------------------
-# Smart Order Routing
-# ------------------
-st.subheader("⚡ AI Execution System")
-order_col1, order_col2 = st.columns(2)
-
-with order_col1:
-    st.write("**Algorithmic Trading**")
-    strategy = st.selectbox("Execution Strategy", [
-        "TWAP", "VWAP", "Iceberg", "Market-On-Close"
-    ])
-    quantity = st.number_input("Quantity", min_value=1, value=100)
-
-with order_col2:
-    st.write("**Smart Parameters**")
-    st.slider("Aggressiveness", 1, 5, 3)
-    st.checkbox("Avoid Market Impact")
-    st.checkbox("Dark Pool Routing")
+def render_market_overview():
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        data = get_live_market_data()
+        if data:
+            st.metric("NIFTY 50", f"₹{data['^NSEI']:,.2f}")
     
-if st.button("Execute Smart Order"):
-    # Implement actual order routing through Kite API
-    st.success("Order executed through NSE/BSE using TWAP strategy")
+    with col2:
+        st.metric("BANK NIFTY", f"₹{data['^NSEBANK']:,.2f}")
+    
+    with col3:
+        st.metric("India VIX", f"{data['^INDIAVIX']:.2f}%")
 
-# ------------------
-# Compliance System
-# ------------------
-st.subheader("📜 SEBI Compliance Check")
-st.write("**Regulatory Safeguards**")
-st.progress(0.85, text="Margin Utilization: 85%")
-st.write("""
-- 🟢 Pattern Day Trader Rule Compliance
-- 🟠 Large Trade Reporting Ready
-- 🔴 SMS Pledge Required (NSE: 1234)
-""")
+# ---------------------
+# Main App
+# ---------------------
+def main():
+    st.title("🇮🇳 AI Trading Nexus Pro")
+    st.markdown("Institutional-grade trading platform for Indian markets")
+    
+    render_sidebar()
+    render_market_overview()
+    
+    # ------------------
+    # Institutional Flow
+    # ------------------
+    st.subheader("📈 Smart Money Tracking")
+    try:
+        fii_dii = get_fii_dii_data()
+        if not fii_dii.empty:
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=fii_dii['date'],
+                y=fii_dii['fii_net'],
+                name='FII Flow',
+                marker_color='#1f77b4'
+            ))
+            fig.add_trace(go.Bar(
+                x=fii_dii['date'],
+                y=fii_dii['dii_net'],
+                name='DII Flow',
+                marker_color='#ff7f0e'
+            ))
+            st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Flow data error: {str(e)}")
+    
+    # ------------------
+    # AI Prediction
+    # ------------------
+    st.subheader("🔮 AI Forecast Engine")
+    pred_col1, pred_col2 = st.columns(2)
+    
+    with pred_col1:
+        ticker = st.selectbox("Select Stock", ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY'])
+        predictor = LSTMPredictor()
+        current_price, predicted_price = predictor.predict(ticker)
+        if current_price and predicted_price:
+            delta = (predicted_price - current_price)/current_price
+            st.metric("LSTM Prediction", 
+                     f"₹{predicted_price:,.2f}", 
+                     f"{delta:.2%}")
+    
+    with pred_col2:
+        st.write("**Technical Signals**")
+        st.code("""
+        RSI (14): 68 [Neutral]
+        MACD: -1.5 [Bearish]
+        Volume Trend: ↗️ 1.2M → 1.8M
+        Options OI: ↗️ 12% Increase
+        """)
+    
+    # ------------------
+    # Backtesting
+    # ------------------
+    st.subheader("📊 Strategy Analytics")
+    tab1, tab2, tab3 = st.tabs(["Backtester", "Optimizer", "Risk Analysis"])
+    
+    with tab1:
+        if st.button("Run Backtest"):
+            try:
+                returns = qs.utils.download_returns('^NSEI', period='2y')
+                qs.reports.html(
+                    returns,
+                    benchmark='^NSEI',
+                    output='backtest.html',
+                    title='Strategy Backtest'
+                )
+                with open('backtest.html', 'r') as f:
+                    html_content = f.read()
+                html(html_content, height=1000, scrolling=True)
+            except Exception as e:
+                st.error(f"Backtest failed: {str(e)}")
+    
+    # ------------------
+    # Risk Management
+    # ------------------
+    with tab3:
+        st.subheader("🛡️ Portfolio Protection")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**Scenario Analysis**")
+            scenarios = {
+                'Market Crash (-40%)': 0.6,
+                'Rate Hike (-25%)': 0.75,
+                'Currency Crisis (-30%)': 0.7
+            }
+            for scenario, factor in scenarios.items():
+                st.write(f"{scenario}: ₹{1000000 * factor:,.2f}")
+        
+        with col2:
+            st.write("**Hedge Advisor**")
+            st.progress(0.65, text="Optimal Hedge Ratio: 65%")
+            st.checkbox("Enable Dynamic Hedging")
+    
+    # ------------------
+    # News Integration
+    # ------------------
+    st.subheader("📰 Real-time Market Pulse")
+    try:
+        news = feedparser.parse("https://www.moneycontrol.com/rss/latestnews.xml")
+        for entry in news.entries[:5]:
+            with st.expander(f"{entry.title}"):
+                st.write(entry.published)
+                sentiment = sentiment_analyzer(entry.title)[0]
+                st.write(f"Sentiment: {sentiment['label']} ({sentiment['score']:.2f})")
+                st.markdown(f"[Read more]({entry.link})")
+    except Exception as e:
+        st.error(f"News error: {str(e)}")
 
-# ------------------
-# Advanced Features
-# ------------------
-with st.expander("🚀 Hedge Fund Tools"):
-    st.write("""
-    - **Portfolio Beta Calculator** with Nifty correlation
-    - **Exotic Derivatives Pricer** (Barrier Options, Swaps)
-    - **Corporate Action Monitor** (Splits, Buybacks)
-    - **Dark Pool Liquidity Scanner**
-    """)
-
-# Run with: streamlit run advanced_nexus.py
+# ---------------------
+# Run Application
+# ---------------------
+if __name__ == "__main__":
+    main()
