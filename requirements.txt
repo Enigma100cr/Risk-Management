@@ -1,3 +1,11 @@
-streamlit
-numpy
-scipy
+streamlit==1.29.0
+numpy==1.26.4
+pandas==2.1.4
+plotly==5.18.0
+kiteconnect==3.9.3
+transformers==4.36.2
+yfinance==0.2.31
+tensorflow==2.15.0
+quantstats==0.0.62
+feedparser==6.0.10
+requests==2.31.0
