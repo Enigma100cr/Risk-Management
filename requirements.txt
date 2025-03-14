@@ -1,11 +1,6 @@
-# test_install.py
-import streamlit
-import numpy
-import pandas
-import plotly
-import kiteconnect
-import transformers
-import yfinance
-import tensorflow
-import quantstats
-
+streamlit==1.32.0
+numpy==1.26.0
+pandas==2.1.4
+plotly==5.18.0
+scipy==1.11.0
+yfinance==0.2.36
