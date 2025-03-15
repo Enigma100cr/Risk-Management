@@ -5,7 +5,7 @@ import numpy as np
 import plotly.express as px
 from scipy.stats import norm
 
-# Configure page settings
+# Configure stable page settings
 st.set_page_config(
     page_title="Trade Fitness Pro",
     layout="wide",
@@ -30,7 +30,7 @@ def process_trades(uploaded_file):
     """Process uploaded trade data with comprehensive error handling"""
     try:
         if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
+            df = pd.read_csv(uploaded_file, encoding='utf-8')
         else:
             df = pd.read_excel(uploaded_file, engine='openpyxl')
         
