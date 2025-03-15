@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -55,12 +54,24 @@ def process_trades(uploaded_file):
         st.error(f"🚨 File Error: {str(e)}")
         return pd.DataFrame()
 
+def calculate_max_drawdown(cumulative_pnl):
+    """Calculate maximum drawdown"""
+    peak = cumulative_pnl.cummax()
+    drawdown = (cumulative_pnl - peak) / peak
+    return drawdown.min() * 100  # Return as percentage
+
+def calculate_kelly_criterion(win_rate, avg_win, avg_loss):
+    """Calculate Kelly Criterion for position sizing"""
+    if avg_loss == 0:
+        return 0
+    return (win_rate - (1 - win_rate) / (avg_win / abs(avg_loss)))
+
 def show_fitness_dashboard(df):
     """Main trading fitness interface"""
     st.title("💰 Trading Fitness Dashboard")
     
     # Key metrics row
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         total = df['pnl'].sum()
         st.metric("Total P&L", f"₹{total:+,.2f}", 
@@ -76,9 +87,14 @@ def show_fitness_dashboard(df):
         st.metric("Avg Return", f"{avg_return:+.1f}%", 
                  help="Average gain per trade")
     
+    with col4:
+        max_drawdown = calculate_max_drawdown(df['pnl'].cumsum())
+        st.metric("Max Drawdown", f"{max_drawdown:.1f}%", 
+                 help="Worst peak-to-trough decline")
+    
     # Visualization section
     with st.expander("📈 Performance Analysis", expanded=True):
-        tab1, tab2, tab3 = st.tabs(["Wealth Journey", "Asset Report Card", "Risk Analysis"])
+        tab1, tab2, tab3, tab4 = st.tabs(["Wealth Journey", "Asset Report Card", "Risk Analysis", "Trade Distribution"])
         
         with tab1:
             df = df.sort_values('trade_date')
@@ -97,6 +113,10 @@ def show_fitness_dashboard(df):
             daily_returns = df['return_pct']/100
             fig = px.histogram(daily_returns, nbins=50,
                              title="Daily Returns Distribution")
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with tab4:
+            fig = px.pie(df, names='result', title="Win/Loss Distribution")
             st.plotly_chart(fig, use_container_width=True)
 
 def show_trading_school():
@@ -137,7 +157,7 @@ def show_advanced_metrics(df):
     st.title("🔍 Advanced Fitness Metrics")
     
     with st.expander("Risk Analysis Gym"):
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             st.subheader("Sharpe Ratio")
@@ -153,6 +173,15 @@ def show_advanced_metrics(df):
             sortino = (returns.mean() - rf)/downside_returns.std() * np.sqrt(252)
             st.metric("Score", f"{sortino:.2f}", 
                      help="Focuses on downside risk only")
+        
+        with col3:
+            st.subheader("Kelly Criterion")
+            win_rate = len(df[df['pnl'] > 0])/len(df)
+            avg_win = df[df['pnl'] > 0]['pnl'].mean()
+            avg_loss = df[df['pnl'] <= 0]['pnl'].mean()
+            kelly = calculate_kelly_criterion(win_rate, avg_win, avg_loss)
+            st.metric("Optimal Bet Size", f"{kelly:.1%}", 
+                     help="Fraction of capital to bet")
     
     with st.expander("Safety Equipment Check"):
         col1, col2 = st.columns(2)
